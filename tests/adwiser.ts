@@ -8,16 +8,13 @@ import {
   LAMPORTS_PER_SOL,
 } from "@solana/web3.js";
 import { BN, Program } from "@coral-xyz/anchor";
-import * as fs from "fs";
 import { randomBytes } from "node:crypto";
 import { Adwiser } from "../target/types/adwiser";
 import wallet from "/Users/vasi/myGitHub/Turbin3/adwiser/Turbin3-wallet.json";
 
 describe("AdWiser Tests", () => {
-
   const advertiser = Keypair.fromSecretKey(new Uint8Array(wallet));
-
-
+  const connection = new Connection("http://localhost:8899", "confirmed");
   const program = anchor.workspace.Adwiser as Program<Adwiser>;
 
   let campaignPda: PublicKey;
@@ -32,6 +29,29 @@ describe("AdWiser Tests", () => {
 
   console.log("campaignId for PDA:", campaignId);
   console.log("advertiser public key:", advertiser.publicKey.toBase58());
+  const provider = anchor.AnchorProvider.env();
+  anchor.setProvider(provider);
+  //console.log(`Success! Check out your TX here:
+  //explorer.solana.com/tx/${txhash}?cluster=devnet`);
+  const balanceLamports = provider.connection.getBalance(advertiser.publicKey);
+  const balanceSol = Number(balanceLamports) / anchor.web3.LAMPORTS_PER_SOL;
+
+  (async () => {
+    try {
+      const txhash = await connection.requestAirdrop(
+        advertiser.publicKey,
+        5 * LAMPORTS_PER_SOL
+      );
+      //console.log(`Success! Check out your TX here:
+      //https://explorer.solana.com/tx/${txhash}?cluster=devnet`);
+    } catch (e) {
+      console.error(`Oops, something went wrong: ${e}`);
+    }
+  })();
+
+  console.log(`Advertiser Wallet Balance: ${balanceSol} SOL`);
+
+  console.log("Connected to RPC:", provider.connection.rpcEndpoint);
 
   it("should create an ad campaign and lock funds", async () => {
     campaignPda = await PublicKey.findProgramAddressSync(

@@ -41,18 +41,18 @@ pub fn create_ad_campaign_logic(
     campaign.remaining_sol = locked_sol;
     campaign.created_at = Clock::get()?.unix_timestamp;
 
-    let rent_lamports = Rent::get()?.minimum_balance(8 + AdCampaign::INIT_SPACE);
-    let total_needed = locked_sol.checked_add(rent_lamports).ok_or(ErrorCode::MathOverflow)?;
+    //let rent_lamports = Rent::get()?.minimum_balance(8 + AdCampaign::INIT_SPACE);
+    //let total_needed = locked_sol.checked_add(rent_lamports).ok_or(ErrorCode::MathOverflow)?;
 
-    require!(
-        ctx.accounts.advertiser.lamports() >= total_needed,
-        ErrorCode::InsufficientFunds
-    );
+    // require!(
+    //     ctx.accounts.advertiser.lamports() >= total_needed,
+    //     ErrorCode::InsufficientFunds
+    // );
 
     let ix = anchor_lang::solana_program::system_instruction::transfer(
         &ctx.accounts.advertiser.key(),
         &ctx.accounts.campaign.key(),
-        total_needed,
+        locked_sol,
     );
     anchor_lang::solana_program::program::invoke(
         &ix,
