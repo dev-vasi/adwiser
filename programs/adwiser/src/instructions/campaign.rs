@@ -22,8 +22,8 @@ pub struct CreateAdCampaign<'info> {
 
 pub fn create_ad_campaign_logic(
     ctx: Context<CreateAdCampaign>,
-    campaign_name: String,
     campaign_id: u64,
+    campaign_name: String,
     cost_per_click: u64,
     ad_duration_days: u64,
     publishers: Vec<Pubkey>,

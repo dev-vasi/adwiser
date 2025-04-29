@@ -2,10 +2,10 @@ use anchor_lang::prelude::*;
 #[account]
 #[derive(InitSpace)]
 pub struct AdCampaign {
-    pub advertiser_pubkey: Pubkey,
+    pub campaign_id: u64,
     #[max_len(50)]
     pub campaign_name: String,
-    pub campaign_id: u64,
+    pub advertiser_pubkey: Pubkey,
     pub cost_per_click: u64,
     pub ad_duration_days: u64,
     #[max_len(50)]
