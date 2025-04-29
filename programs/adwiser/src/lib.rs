@@ -7,7 +7,7 @@ pub mod errors;
 use instructions::campaign::*;
 
 
-declare_id!("6587iiArEump7YzmmLzoigXUCmT33yJUFpyV3NzGUgNo");
+declare_id!("2rTs24d9vw1TSVWEoqKbnjAFChmtBVCjUecA5pvFQy5c");
 
 #[program]
 pub mod adwiser {

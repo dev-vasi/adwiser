@@ -9,7 +9,7 @@ pub struct CreateAdCampaign<'info> {
         init,
         payer = advertiser,
         space = 8 + AdCampaign::INIT_SPACE,
-        seeds = [b"campaign", advertiser.key().as_ref()],
+        seeds = [b"campaign", advertiser.key().as_ref(), campaign_id.to_le_bytes().as_ref()],
         bump,
     )]
     pub campaign: Account<'info, AdCampaign>,
@@ -29,6 +29,10 @@ pub fn create_ad_campaign_logic(
     publishers: Vec<Pubkey>,
     locked_sol: u64,
 ) -> Result<()> {
+    msg!("Program ID: {}", ctx.program_id);
+    msg!("Advertiser: {}", ctx.accounts.advertiser.key());
+    msg!("Campaign ID: {}", campaign_id);
+    msg!("Campaign ID bytes: {:?}", &campaign_id.to_le_bytes());
     let campaign = &mut ctx.accounts.campaign;
 
     campaign.advertiser_pubkey = *ctx.accounts.advertiser.key;
@@ -41,24 +45,16 @@ pub fn create_ad_campaign_logic(
     campaign.remaining_sol = locked_sol;
     campaign.created_at = Clock::get()?.unix_timestamp;
 
-    //let rent_lamports = Rent::get()?.minimum_balance(8 + AdCampaign::INIT_SPACE);
-    //let total_needed = locked_sol.checked_add(rent_lamports).ok_or(ErrorCode::MathOverflow)?;
-
-    // require!(
-    //     ctx.accounts.advertiser.lamports() >= total_needed,
-    //     ErrorCode::InsufficientFunds
-    // );
-
     let ix = anchor_lang::solana_program::system_instruction::transfer(
         &ctx.accounts.advertiser.key(),
-        &ctx.accounts.campaign.key(),
+        &campaign.key(),
         locked_sol,
     );
     anchor_lang::solana_program::program::invoke(
         &ix,
         &[
             ctx.accounts.advertiser.to_account_info(),
-            ctx.accounts.campaign.to_account_info(),
+            campaign.to_account_info(),
             ctx.accounts.system_program.to_account_info(),
         ],
     )?;
