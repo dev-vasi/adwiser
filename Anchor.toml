@@ -6,7 +6,7 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-adwiser = "CXzd9JktBCTr4TsqtZec7HNeQ51gUk1iWQ337wR1vZtY"
+adwiser = "HBUba6LqBPZSh2QNGwVDFxVq1vaj9Sav9vhVoAt1Ti6w"
 
 [registry]
 url = "https://api.apr.dev"

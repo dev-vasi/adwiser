@@ -1,84 +1,200 @@
 import { expect } from "chai";
 import * as anchor from "@coral-xyz/anchor";
+import { Program } from "@coral-xyz/anchor";
 import {
-  Connection,
   PublicKey,
-  Keypair,
   SystemProgram,
+  Keypair,
   LAMPORTS_PER_SOL,
+  ComputeBudgetProgram,
+  Transaction,
 } from "@solana/web3.js";
-import { BN, Program } from "@coral-xyz/anchor";
-import { randomBytes } from "node:crypto";
 import { Adwiser } from "../target/types/adwiser";
-import wallet from "/Users/vasi/myGitHub/Turbin3/adwiser/Turbin3-wallet.json";
+import wallet from "../Turbin3-wallet.json";
+import { randomBytes } from "crypto";
 
-describe("AdWiser Tests", () => {
-  const advertiser = Keypair.fromSecretKey(new Uint8Array(wallet));
-  const connection = new Connection("http://localhost:8899", "confirmed");
+const keypair = Keypair.fromSecretKey(new Uint8Array(wallet));
+
+describe("adwiser", () => {
+  // Configure the client to use the local cluster.
+  const provider = anchor.AnchorProvider.env();
+  anchor.setProvider(provider);
+
   const program = anchor.workspace.Adwiser as Program<Adwiser>;
 
-  let campaignPda: PublicKey;
-  const campaignName = "TestCampaign";
-  const campaignId = new BN(randomBytes(8));
-  const costPerClick = new anchor.BN(1000000); // 0.001 SOL
-  const adDurationDays = new anchor.BN(7); // 7 days
-  const lockedSol = new anchor.BN(8_000_000_000); // 1 SOL
-  const publisher1 = anchor.web3.Keypair.generate().publicKey;
-  const publisher2 = anchor.web3.Keypair.generate().publicKey;
-  const publishers = [publisher1, publisher2];
+  let advertiser: Keypair = keypair;
+  let campaignAcc: PublicKey;
+  let treasuryAcc: PublicKey; // Added treasury account
+  const campaignId = new anchor.BN(12345);
+  const campaignName = "Test Campaign";
+  const costPerClick = new anchor.BN(1000);
+  const adDurationDays = new anchor.BN(7);
+  const publisher1 = Keypair.generate();
+  const publisher2 = Keypair.generate();
+  const publishers = [publisher1.publicKey, publisher2.publicKey];
+  const lockedSol = new anchor.BN(2 * LAMPORTS_PER_SOL);
 
-  it("should create an ad campaign and lock funds", async () => {
-    let calculatedPda = PublicKey.findProgramAddressSync(
-      [Buffer.from("campaign"),advertiser.publicKey.toBuffer(),campaignId.toArrayLike(Buffer, "le", 8)],
+  before(async () => {
+    // Derive both PDAs
+    [campaignAcc] = await anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("campaign"), campaignId.toArrayLike(Buffer, "le", 8)],
       program.programId
-    )[0];
+    );
     
-    campaignPda = calculatedPda;
-    try {
+    [treasuryAcc] = await anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("treasury"), campaignId.toArrayLike(Buffer, "le", 8)],
+      program.programId
+    );
+    
+    // Fund publisher accounts for rent exemption
+    const airdropSignature1 = await provider.connection.requestAirdrop(
+      publisher1.publicKey,
+      0.1 * LAMPORTS_PER_SOL
+    );
+    const airdropSignature2 = await provider.connection.requestAirdrop(
+      publisher2.publicKey,
+      0.1 * LAMPORTS_PER_SOL
+    );
+    
+    // Confirm airdrops
+    await provider.connection.confirmTransaction(airdropSignature1);
+    await provider.connection.confirmTransaction(airdropSignature2);
+  });
+  
+  describe("initializeCampaign", () => {
+    it("initializes a campaign", async () => {
       await program.methods
-        .createAdCampaign(
+        .initializeCampaign(
           campaignId,
           campaignName,
+          advertiser.publicKey,
           costPerClick,
           adDurationDays,
           publishers,
           lockedSol
         )
         .accounts({
-          campaign: campaignPda,
+          campaignAcc,
+          treasury: treasuryAcc, // Include treasury account
           advertiser: advertiser.publicKey,
           systemProgram: SystemProgram.programId,
         })
         .signers([advertiser])
         .rpc();
-      console.log("Transaction successful!");
-      const campaignAccount = await program.account.adCampaign.fetch(campaignPda);
-      expect(campaignAccount.advertiserPubkey.toBase58()).to.equal(
+
+      const campaign = await program.account.campaign.fetch(campaignAcc);
+
+      console.log("Campaign Account: ", campaignAcc.toBase58());
+      console.log("Treasury Account: ", treasuryAcc.toBase58());
+      console.log("Campaign ID: ", campaign.campaignId.toString());
+      console.log("Campaign Name: ", campaign.campaignName);
+      console.log(
+        "Advertiser Public Key: ",
+        campaign.advertiserPubkey.toBase58()
+      );
+      console.log(
+        "Cost Per Click: ",
+        campaign.costPerClick.toNumber() / LAMPORTS_PER_SOL
+      );
+      console.log("Ad Duration Days: ", campaign.adDurationDays.toNumber());
+      console.log(
+        "Publishers: ",
+        campaign.publishers.map((p: PublicKey) => p.toBase58())
+      );
+      console.log(
+        "Locked SOL: ",
+        campaign.lockedSol.toNumber() / LAMPORTS_PER_SOL
+      );
+      console.log(
+        "Remaining SOL: ",
+        campaign.remainingSol.toNumber() / LAMPORTS_PER_SOL
+      );
+      console.log("Created At: ", campaign.createdAt.toString());
+
+      // Verify treasury balance
+      const treasuryBalance = await provider.connection.getBalance(treasuryAcc);
+      console.log("Treasury Balance: ", treasuryBalance / LAMPORTS_PER_SOL, "SOL");
+
+      expect(campaignId.eq(campaign.campaignId)).to.be.true;
+      expect(campaign.campaignName).to.equal(campaignName);
+      expect(campaign.advertiserPubkey.toBase58()).to.equal(
         advertiser.publicKey.toBase58()
       );
-      expect(campaignAccount.campaignName).to.equal(campaignName);
-      expect(campaignAccount.campaignId.toString()).to.equal(campaignId.toString());
-      expect(campaignAccount.costPerClick.toString()).to.equal(
-        costPerClick.toString()
+      expect(campaign.costPerClick.toNumber()).to.equal(
+        costPerClick.toNumber()
       );
-      expect(campaignAccount.lockedSol.toString()).to.equal(lockedSol.toString());
-      expect(campaignAccount.remainingSol.toString()).to.equal(
-        lockedSol.toString()
+      expect(campaign.adDurationDays.toNumber()).to.equal(
+        adDurationDays.toNumber()
       );
-      expect(campaignAccount.publishers.length).to.equal(2);
+      expect(
+        campaign.publishers.map((p: PublicKey) => p.toBase58())
+      ).to.deep.equal(publishers.map((p) => p.toBase58()));
+      expect(campaign.lockedSol.toNumber()).to.equal(lockedSol.toNumber());
+      expect(campaign.remainingSol.toNumber()).to.equal(lockedSol.toNumber());
+      expect(typeof campaign.createdAt.toNumber()).to.equal("number");
+    });
+  });
 
-      const campaignBalance = await connection.getBalance(campaignPda);
-      console.log("Campaign Balance:", campaignBalance , "SOL");
+  describe("Pay Publisher", () => {
+    it("pays the publisher", async () => {
+      const publisher = publisher1;
+      const amount = new anchor.BN(1 * LAMPORTS_PER_SOL);
       
-      console.log("✅ Campaign Created Successfully!");
-      console.log("Campaign PDA:", campaignPda.toBase58());
-    } catch (err) {
-      console.error("Error details:", err);
-      if (err.logs) {
-        console.log("Program Logs:");
-        err.logs.forEach((log, i) => console.log(`${i}: ${log}`));
-      }
-      throw err;
-    }
+      // Get publisher's balance before payment
+      const balanceBefore = await provider.connection.getBalance(publisher.publicKey);
+      console.log("Publisher balance before: ", balanceBefore / LAMPORTS_PER_SOL, "SOL");
+      
+      // Get treasury balance before payment
+      const treasuryBalanceBefore = await provider.connection.getBalance(treasuryAcc);
+      console.log("Treasury balance before: ", treasuryBalanceBefore / LAMPORTS_PER_SOL, "SOL");
+  
+      const tx = new Transaction();
+      tx.add(
+        ComputeBudgetProgram.setComputeUnitLimit({ units: 100_000_000 })
+      );
+      tx.add(
+        ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100_000_000 })
+      );
+      tx.add(
+        await program.methods
+          .payPublisher(campaignId, amount)  // Remove publisher.publicKey parameter
+          .accounts({
+            campaignAcc: campaignAcc,
+            treasury: treasuryAcc,  // Add treasury account
+            publisher: publisher.publicKey,
+            systemProgram: SystemProgram.programId,
+          })
+          .instruction()
+      );
+  
+      const txSignature = await provider.sendAndConfirm(tx, [advertiser]);
+      console.log("Transaction signature: ", txSignature);
+  
+      // Get campaign data after payment
+      const campaign = await program.account.campaign.fetch(campaignAcc);
+      console.log(
+        "Remaining SOL after payment: ",
+        campaign.remainingSol.toNumber() / LAMPORTS_PER_SOL
+      );
+      
+      // Get publisher's balance after payment
+      const balanceAfter = await provider.connection.getBalance(publisher.publicKey);
+      console.log("Publisher balance after: ", balanceAfter / LAMPORTS_PER_SOL, "SOL");
+      
+      // Get treasury balance after payment
+      const treasuryBalanceAfter = await provider.connection.getBalance(treasuryAcc);
+      console.log("Treasury balance after: ", treasuryBalanceAfter / LAMPORTS_PER_SOL, "SOL");
+      
+      // Verify the remaining SOL in campaign data is updated
+      expect(campaign.remainingSol.toNumber()).to.equal(
+        lockedSol.sub(amount).toNumber()
+      );
+      
+      // Verify publisher received the payment (accounting for potential transaction fees)
+      expect(balanceAfter).to.be.at.least(balanceBefore + amount.toNumber() - 10000);
+      
+      // Verify treasury balance decreased by the payment amount
+      expect(treasuryBalanceAfter).to.be.at.most(treasuryBalanceBefore - amount.toNumber());
+    });
   });
 });
