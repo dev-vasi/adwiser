@@ -5,7 +5,7 @@ pub struct campaign {
     pub campaign_id: u64,
     #[max_len(50)]
     pub campaign_name: String,
-    pub advertiser_pubkey: Pubkey,
+    pub adwiser_pubkey: Pubkey,
     pub cost_per_click: u64,
     pub ad_duration_days: u64,
     #[max_len(10, 50)]

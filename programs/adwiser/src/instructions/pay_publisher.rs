@@ -1,7 +1,6 @@
 use crate::state::campaign;
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::system_instruction;
-use anchor_lang::solana_program::program::invoke_signed;
+use anchor_lang::system_program::{self, Transfer};
 
 #[derive(Accounts)]
 #[instruction(campaign_id: u64)]
@@ -18,8 +17,7 @@ pub struct PayPublisher<'info> {
         seeds = [b"treasury", campaign_id.to_le_bytes().as_ref()],
         bump,
     )]
-    /// CHECK: This is the treasury PDA that holds the campaign funds
-    pub treasury: UncheckedAccount<'info>,
+    pub treasury: SystemAccount<'info>,
     
     /// CHECK: We're only using this as a target for transfer
     #[account(mut)]
@@ -28,44 +26,29 @@ pub struct PayPublisher<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn pay_publisher(
-    ctx: Context<PayPublisher>,
-    campaign_id: u64,
-    amount: u64,
-) -> Result<()> {
-    let campaign_acc = &mut ctx.accounts.campaign_acc;
-    
-    // Make sure we have enough funds
-    // if campaign_acc.remaining_sol < amount {
-    //     return Err(error!(ErrorCode::InsufficientFunds));
-    // }
-
-    // Get treasury seeds for signing
-    let campaign_id_bytes = campaign_id.to_le_bytes();
-    let treasury_seeds = &[
-        b"treasury",
-        campaign_id_bytes.as_ref(),
-        &[ctx.bumps.treasury],
-    ];
-    
-    // Transfer SOL from treasury to publisher
-    invoke_signed(
-        &system_instruction::transfer(
-            &ctx.accounts.treasury.key(),
-            &ctx.accounts.publisher.key(),
-            amount,
-        ),
-        &[
-            ctx.accounts.treasury.to_account_info(),
-            ctx.accounts.publisher.to_account_info(),
-            ctx.accounts.system_program.to_account_info(),
-        ],
-        &[treasury_seeds],
-    )?;
-
-    // Update remaining SOL in campaign tracking
-    campaign_acc.remaining_sol = campaign_acc.remaining_sol.saturating_sub(amount);
-
-    msg!("Transferred {} lamports to publisher", amount);
-    Ok(())
+impl<'info> PayPublisher<'info> {
+    pub fn pay_publisher_fn(ctx: Context<PayPublisher>, amount: u64) -> Result<()> {
+        let cpi_program = ctx.accounts.system_program.to_account_info();
+        let cpi_accounts =  Transfer {
+            from: ctx.accounts.treasury.to_account_info(),
+            to: ctx.accounts.publisher.to_account_info(),
+        };
+        let campaign_id_bytes = ctx.accounts.campaign_acc.campaign_id.to_le_bytes();
+        let seeds = &[
+            b"treasury",
+            campaign_id_bytes.as_ref(),
+            &[ctx.bumps.treasury],
+        ];
+        let signer_seeds = &[&seeds[..]];
+        msg!("Treasury account: {:?}", ctx.accounts.treasury.key());
+        msg!("Publisher account: {:?}", ctx.accounts.publisher.key());
+        msg!("Amount to transfer: {:?}", amount);
+        msg!("Signer seeds: {:?}", signer_seeds);
+        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
+        system_program::transfer(cpi_ctx, amount);
+        ctx.accounts.campaign_acc.remaining_sol -= amount;
+        msg!("Remaining SOL in campaign account: {:?}", ctx.accounts.campaign_acc.remaining_sol);
+        msg!("Transfer successful");
+        Ok(())
+    }
 }

@@ -3,8 +3,8 @@ mod instructions;
 mod state;
 
 
-use crate::instructions::initialize_campaign::*;
-use crate::instructions::pay_publisher::*;
+use instructions::*;
+use state::*;
 declare_id!("HBUba6LqBPZSh2QNGwVDFxVq1vaj9Sav9vhVoAt1Ti6w");
 
 #[program]
@@ -35,9 +35,19 @@ pub mod adwiser {
 
     pub fn pay_publisher(
         ctx: Context<PayPublisher>,
-        campaign_id: u64,
+        _campaign_id: u64,
         amount: u64,
     ) -> Result<()> {
-        pay_publisher(ctx, campaign_id, amount)
+        ctx.accounts.campaign_acc.campaign_id = _campaign_id;
+        pay_publisher::PayPublisher::<'_>::pay_publisher_fn(ctx, amount)?;
+        Ok(())
+    }
+
+    pub fn close_campaign(ctx: Context<CloseCampaign>) -> Result<()> {
+        CloseCampaign::close_campaign_fn(ctx)
+    }
+
+    pub fn close_treasury(ctx: Context<CloseTreasury>, campaign_id: u64) -> Result<()> {
+        CloseTreasury::close_treasury_fn(ctx, campaign_id)
     }
 }
