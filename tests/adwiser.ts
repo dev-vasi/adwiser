@@ -1,5 +1,3 @@
-import { expect } from "chai";
-import assert from "assert";
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import {
@@ -7,12 +5,13 @@ import {
   SystemProgram,
   Keypair,
   LAMPORTS_PER_SOL,
-  ComputeBudgetProgram,
-  Transaction,
 } from "@solana/web3.js";
 import { Adwiser } from "../target/types/adwiser";
 import wallet from "../Turbin3-wallet.json";
-import { randomBytes } from "crypto";
+import chai from "chai";
+import chaiAsPromised from "chai-as-promised";
+chai.use(chaiAsPromised);
+const { expect } = chai;
 
 const keypair = Keypair.fromSecretKey(new Uint8Array(wallet));
 
@@ -115,7 +114,10 @@ describe("adwiser", () => {
         "Remaining SOL: ",
         campaign.remainingSol.toNumber() / LAMPORTS_PER_SOL
       );
-      console.log("Created At: ", campaign.createdAt.toString());
+      console.log(
+        "Created At:",
+        new Date(campaign.createdAt.toNumber() * 1000).toLocaleString()
+      );
 
       // Verify escrow balance
       const escrowBalance = await provider.connection.getBalance(escrowAcc);
@@ -140,6 +142,104 @@ describe("adwiser", () => {
       expect(campaign.totalClicks.toNumber()).to.equal(0);
       expect(campaign.commissionClicks.toNumber()).to.equal(0);
       expect(typeof campaign.createdAt.toNumber()).to.equal("number");
+    });
+  });
+
+  describe("initializeCampaign - Errors", () => {
+    it("Fails to initialize campaign with zero locked SOL", async () => {
+      const campaignId = new anchor.BN(Date.now() + 1);
+      const [campaignAcc] = anchor.web3.PublicKey.findProgramAddressSync(
+        [Buffer.from("campaign"), campaignId.toArrayLike(Buffer, "le", 8)],
+        program.programId
+      );
+      const [escrowAcc] = anchor.web3.PublicKey.findProgramAddressSync(
+        [Buffer.from("escrow"), campaignId.toArrayLike(Buffer, "le", 8)],
+        program.programId
+      );
+      await expect(
+        program.methods
+          .initializeCampaign(
+            campaignId,
+            "ZeroSOL",
+            advertiser.publicKey,
+            costPerClick,
+            adDurationDays,
+            publishers,
+            new anchor.BN(0)
+          )
+          .accountsStrict({
+            campaignAcc,
+            escrow: escrowAcc,
+            adwiser: adwiser.publicKey,
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([adwiser])
+          .rpc()
+      ).to.be.rejectedWith("Amount must be greater than zero");
+    });
+
+    it("Fails to initialize campaign with empty name", async () => {
+      const campaignId = new anchor.BN(Date.now() + 2);
+      const [campaignAcc] = anchor.web3.PublicKey.findProgramAddressSync(
+        [Buffer.from("campaign"), campaignId.toArrayLike(Buffer, "le", 8)],
+        program.programId
+      );
+      const [escrowAcc] = anchor.web3.PublicKey.findProgramAddressSync(
+        [Buffer.from("escrow"), campaignId.toArrayLike(Buffer, "le", 8)],
+        program.programId
+      );
+      await expect(
+        program.methods
+          .initializeCampaign(
+            campaignId,
+            "",
+            advertiser.publicKey,
+            costPerClick,
+            adDurationDays,
+            publishers,
+            lockedSol
+          )
+          .accountsStrict({
+            campaignAcc,
+            escrow: escrowAcc,
+            adwiser: adwiser.publicKey,
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([adwiser])
+          .rpc()
+      ).to.be.rejectedWith("Campaign name cannot be empty");
+    });
+
+    it("Fails to initialize campaign with no publishers", async () => {
+      const campaignId = new anchor.BN(Date.now() + 3);
+      const [campaignAcc] = anchor.web3.PublicKey.findProgramAddressSync(
+        [Buffer.from("campaign"), campaignId.toArrayLike(Buffer, "le", 8)],
+        program.programId
+      );
+      const [escrowAcc] = anchor.web3.PublicKey.findProgramAddressSync(
+        [Buffer.from("escrow"), campaignId.toArrayLike(Buffer, "le", 8)],
+        program.programId
+      );
+      await expect(
+        program.methods
+          .initializeCampaign(
+            campaignId,
+            "NoPublishers",
+            advertiser.publicKey,
+            costPerClick,
+            adDurationDays,
+            [],
+            lockedSol
+          )
+          .accountsStrict({
+            campaignAcc,
+            escrow: escrowAcc,
+            adwiser: adwiser.publicKey,
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([adwiser])
+          .rpc()
+      ).to.be.rejectedWith("No publishers provided");
     });
   });
 
@@ -235,6 +335,37 @@ describe("adwiser", () => {
     });
   });
 
+  describe("payPublisher - Errors", () => {
+    it("Fails to pay publisher with 0 clicks", async () => {
+      await expect(
+        program.methods
+          .payPublisher(campaignId, new anchor.BN(0))
+          .accountsStrict({
+            campaignAcc,
+            escrow: escrowAcc,
+            publisher: publishers[0],
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc()
+      ).to.be.rejectedWith("Amount must be greater than zero");
+    });
+
+    it("Fails when unauthorized publisher tries to claim", async () => {
+      const fakePublisher = anchor.web3.Keypair.generate();
+      await expect(
+        program.methods
+          .payPublisher(campaignId, new anchor.BN(1))
+          .accountsStrict({
+            campaignAcc,
+            escrow: escrowAcc,
+            publisher: fakePublisher.publicKey,
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc()
+      ).to.be.rejectedWith("Publisher not authorized");
+    });
+  });
+
   describe("Pay Commission", () => {
     it("Pays the commission to AdWiser Wallet", async () => {
       // Get AdWiser's balance before payment
@@ -243,7 +374,8 @@ describe("adwiser", () => {
       );
       console.log(
         "AdWiser balance before: ",
-        balanceBefore 
+        balanceBefore / LAMPORTS_PER_SOL,
+        "SOL"
       );
 
       // Get escrow balance before payment
@@ -257,9 +389,6 @@ describe("adwiser", () => {
       );
 
       const campaignBefore = await program.account.campaign.fetch(campaignAcc);
-      console.log("Commission Clicks: ", campaignBefore.commissionClicks.toNumber());
-      console.log("costPerClick: ", campaignBefore.costPerClick.toNumber());
-      console.log("Percentage: ", percentage.toNumber())
 
       let amount = campaignBefore.costPerClick
         .mul(campaignBefore.commissionClicks)
@@ -269,7 +398,6 @@ describe("adwiser", () => {
       amount = amount.add(
         campaignBefore.noOfTxns.add(new anchor.BN(1)).mul(new anchor.BN(5000))
       );
-      console.log("Amount to be paid: ", amount.toNumber());
 
       console.log(
         "Amount to be paid: ",
@@ -300,7 +428,8 @@ describe("adwiser", () => {
       );
       console.log(
         "AdWiser balance after: ",
-        balanceAfter 
+        balanceAfter / LAMPORTS_PER_SOL,
+        "SOL"
       );
 
       // Get escrow balance after payment
@@ -314,11 +443,26 @@ describe("adwiser", () => {
       );
       expect(balanceAfter).greaterThan(balanceBefore);
 
-
       // Verify escrow balance decreased by the payment amount
       expect(escrowBalanceAfter).to.be.at.most(
         escrowBalanceBefore - amount.toNumber()
       );
+    });
+  });
+
+  describe("payCommission - Errors", () => {
+    it("Fails to pay commission when commission clicks are zero", async () => {
+      await expect(
+        program.methods
+          .payCommission(campaignId, new anchor.BN(10))
+          .accountsStrict({
+            campaignAcc,
+            escrow: escrowAcc,
+            adwiser: adwiser.publicKey,
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc()
+      ).to.be.rejectedWith("Commission clicks are zero");
     });
   });
 
@@ -327,8 +471,16 @@ describe("adwiser", () => {
       const AddedSOL = new anchor.BN(10 * LAMPORTS_PER_SOL);
       const AddedDuation = new anchor.BN(3);
       const campaignBefore = await program.account.campaign.fetch(campaignAcc);
-      console.log("Locked SOL before: ", campaignBefore.lockedSol.toNumber());
-      console.log("Ad Duration Days before: ", campaignBefore.adDurationDays.toNumber());
+      console.log(
+        "Locked SOL before: ",
+        campaignBefore.lockedSol.toNumber() / LAMPORTS_PER_SOL,
+        "SOL"
+      );
+      console.log(
+        "Ad Duration Days before: ",
+        campaignBefore.adDurationDays.toNumber(),
+        "days"
+      );
       const LockedSol = campaignBefore.lockedSol;
       const AdDurationDays = campaignBefore.adDurationDays;
       const remainingSol = campaignBefore.remainingSol;
@@ -345,8 +497,16 @@ describe("adwiser", () => {
         .then(log);
       console.log("Campaign updated");
       const campaign = await program.account.campaign.fetch(campaignAcc);
-      console.log("Updated Locked SOL: ", campaign.lockedSol.toNumber());
-      console.log("Updated Ad Duration Days: ", campaign.adDurationDays.toNumber());
+      console.log(
+        "Updated Locked SOL: ",
+        campaign.lockedSol.toNumber() / LAMPORTS_PER_SOL,
+        "SOL"
+      );
+      console.log(
+        "Updated Ad Duration Days: ",
+        campaign.adDurationDays.toNumber(),
+        "days"
+      );
 
       // Verify the updated values
       expect(campaign.lockedSol.toNumber()).to.equal(
@@ -361,7 +521,45 @@ describe("adwiser", () => {
     });
   });
 
+  describe("updateCampaign - Errors", () => {
+    it("Fails to update campaign with 0 SOL and 0 duration", async () => {
+      await expect(
+        program.methods
+          .updateCampaign(campaignId, new anchor.BN(0), new anchor.BN(0))
+          .accountsStrict({
+            campaignAcc,
+            escrow: escrowAcc,
+            adwiser: adwiser.publicKey,
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc()
+      ).to.be.rejectedWith(
+        "Either Locked SOL or AD Duration should be greater than zero"
+      );
+    });
+  });
 
+  describe("closeEscrow - Errors", () => {
+    it("Fails to close escrow with 0 balance", async () => {
+      const emptyCampaignId = new anchor.BN(Date.now() + 4);
+      const [emptyEscrow] = anchor.web3.PublicKey.findProgramAddressSync(
+        [Buffer.from("escrow"), emptyCampaignId.toArrayLike(Buffer, "le", 8)],
+        program.programId
+      );
+      // Simulate empty escrow here if needed
+
+      await expect(
+        program.methods
+          .closeEscrow(emptyCampaignId)
+          .accountsStrict({
+            escrow: emptyEscrow,
+            advertiser: advertiser.publicKey,
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc()
+      ).to.be.rejectedWith("Nothing to withdraw from treasury");
+    });
+  });
 
   describe("Close Campaign", () => {
     it("close campaign", async () => {
