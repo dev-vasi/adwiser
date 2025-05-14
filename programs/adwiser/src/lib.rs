@@ -1,14 +1,16 @@
+#![allow(unexpected_cfgs)]
 use anchor_lang::prelude::*;
 mod instructions;
 mod state;
+mod errors;
 
 
 use instructions::*;
-use state::*;
 declare_id!("HBUba6LqBPZSh2QNGwVDFxVq1vaj9Sav9vhVoAt1Ti6w");
 
 #[program]
 pub mod adwiser {
+
     use super::*;
 
     pub fn initialize_campaign(
@@ -36,10 +38,20 @@ pub mod adwiser {
     pub fn pay_publisher(
         ctx: Context<PayPublisher>,
         _campaign_id: u64,
-        amount: u64,
+        no_of_clicks: u64,
     ) -> Result<()> {
         ctx.accounts.campaign_acc.campaign_id = _campaign_id;
-        pay_publisher::PayPublisher::<'_>::pay_publisher_fn(ctx, amount)?;
+        pay_publisher::PayPublisher::<'_>::pay_publisher_fn(ctx, no_of_clicks)?;
+        Ok(())
+    }
+
+    pub fn pay_commission(
+        ctx: Context<PayCommission>,
+        campaign_id: u64,
+        percentage: u64,
+    ) -> Result<()> {
+        ctx.accounts.campaign_acc.campaign_id = campaign_id;
+        pay_commission::PayCommission::<'_>::pay_commission_fn(ctx, percentage)?;
         Ok(())
     }
 
@@ -47,7 +59,7 @@ pub mod adwiser {
         CloseCampaign::close_campaign_fn(ctx)
     }
 
-    pub fn close_treasury(ctx: Context<CloseTreasury>, campaign_id: u64) -> Result<()> {
-        CloseTreasury::close_treasury_fn(ctx, campaign_id)
+    pub fn close_escrow(ctx: Context<CloseEscrow>, campaign_id: u64) -> Result<()> {
+        CloseEscrow::close_escrow_fn(ctx, campaign_id)
     }
 }

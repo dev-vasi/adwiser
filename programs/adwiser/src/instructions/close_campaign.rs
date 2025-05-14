@@ -1,4 +1,6 @@
-use crate::state::campaign;
+#![allow(unexpected_cfgs)]
+use crate::state::Campaign;
+use crate::errors::AdwiserError;
 use anchor_lang::prelude::*;
 use anchor_lang::system_program::{self, Transfer};
 
@@ -8,7 +10,7 @@ pub struct CloseCampaign<'info> {
         mut,
         close = adwiser,
     )]
-    pub campaign_acc: Box<Account<'info, campaign>>,
+    pub campaign_acc: Box<Account<'info, Campaign>>,
 
     /// CHECK: We're only using this as a target for transfer
     #[account(mut)]
@@ -18,7 +20,7 @@ pub struct CloseCampaign<'info> {
 }
 
 impl<'info> CloseCampaign<'info> {
-    pub fn close_campaign_fn(ctx: Context<CloseCampaign>) -> Result<()> {
+    pub fn close_campaign_fn(_ctx: Context<CloseCampaign>) -> Result<()> {
         Ok(())
     }
 }
@@ -26,13 +28,13 @@ impl<'info> CloseCampaign<'info> {
 
 #[derive(Accounts)]
 #[instruction(campaign_id: u64)]
-pub struct CloseTreasury<'info> {
+pub struct CloseEscrow<'info> {
     #[account(
         mut,
-        seeds = [b"treasury", campaign_id.to_le_bytes().as_ref()],
+        seeds = [b"escrow", campaign_id.to_le_bytes().as_ref()],
         bump,
     )]
-    pub treasury: SystemAccount<'info>,
+    pub escrow: SystemAccount<'info>,
 
     /// CHECK: We're only using this as a target for transfer
     #[account(mut)]
@@ -41,23 +43,25 @@ pub struct CloseTreasury<'info> {
     pub system_program: Program<'info, System>,
 }
 
-impl<'info> CloseTreasury<'info> {
+impl<'info> CloseEscrow<'info> {
 
-    pub fn close_treasury_fn(ctx: Context<CloseTreasury>, campaignid: u64) -> Result<()> {
+    pub fn close_escrow_fn(ctx: Context<CloseEscrow>, campaignid: u64) -> Result<()> {
+        let escrow_balance = ctx.accounts.escrow.lamports();
+        require!(escrow_balance > 0, AdwiserError::NothingToWithdraw);
         let cpi_program = ctx.accounts.system_program.to_account_info();
         let campaign_id_bytes = campaignid.to_le_bytes();
         let seeds = &[
-            b"treasury",
+            b"escrow",
             campaign_id_bytes.as_ref(),
-            &[ctx.bumps.treasury],
+            &[ctx.bumps.escrow],
         ];
         let signer_seeds = &[&seeds[..]];
         let cpi_accounts = Transfer {
-            from: ctx.accounts.treasury.to_account_info(),
+            from: ctx.accounts.escrow.to_account_info(),
             to: ctx.accounts.advertiser.to_account_info(),
         };
         let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
-        system_program::transfer(cpi_ctx, ctx.accounts.treasury.lamports())?;
+        system_program::transfer(cpi_ctx, ctx.accounts.escrow.lamports())?;
 
         Ok(())
     }

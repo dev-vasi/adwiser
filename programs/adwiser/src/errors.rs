@@ -1,16 +1,21 @@
 use anchor_lang::prelude::*;
 
 #[error_code]
-pub enum ErrorCode {
-    #[msg("Insufficient funds to perform this operation.")]
+pub enum AdwiserError {
+    #[msg("Amount must be greater than zero")]
+    InvalidAmount,
+    #[msg("Not enough funds in campaign")]
     InsufficientFunds,
-
-    #[msg("Math overflow occurred.")]
-    MathOverflow,
-
-    #[msg("Unauthorized access.")]
-    Unauthorized,
-
-    #[msg("Invalid campaign parameters.")]
-    InvalidCampaign,
+    #[msg("Publisher not authorized")]
+    UnauthorizedPublisher,
+    #[msg("Campaign name cannot be empty")]
+    InvalidName,
+    #[msg("No publishers provided")]
+    NoPublishers,
+    #[msg("Only the adwiser can close this campaign")]
+    UnauthorizedCloser,
+    #[msg("Nothing to withdraw from treasury")]
+    NothingToWithdraw,
+    #[msg("Commission clicks are zero")]
+    NoClicksForCommission,
 }

@@ -20,20 +20,40 @@ describe("adwiser", () => {
   // Configure the client to use the local cluster.
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
-
   const program = anchor.workspace.Adwiser as Program<Adwiser>;
+
+  const connection = provider.connection;
 
   let adwiser: Keypair = keypair;
   let campaignAcc: PublicKey;
-  let treasuryAcc: PublicKey; // Added treasury account
+  let escrowAcc: PublicKey;
   const campaignId = new anchor.BN(55667766);
   const campaignName = "Test Campaign";
-  const costPerClick = new anchor.BN(1000);
+  const costPerClick = new anchor.BN(500000); // 0.005 SOL
   const adDurationDays = new anchor.BN(7);
+  const percentage = new anchor.BN(5); //5% commission
+  const no_of_clicks = new anchor.BN(10);
+  const advertiser = Keypair.generate();
   const publisher1 = Keypair.generate();
   const publisher2 = Keypair.generate();
   const publishers = [publisher1.publicKey, publisher2.publicKey];
   const lockedSol = new anchor.BN(10 * LAMPORTS_PER_SOL);
+
+  const confirm = async (signature: string): Promise<string> => {
+    const block = await connection.getLatestBlockhash();
+    await connection.confirmTransaction({
+      signature,
+      ...block,
+    });
+    return signature;
+  };
+
+  const log = async (signature: string): Promise<string> => {
+    console.log(
+      `Your transaction signature: https://explorer.solana.com/transaction/${signature}?cluster=custom&customUrl=${connection.rpcEndpoint}`
+    );
+    return signature;
+  };
 
   before(async () => {
     // Derive both PDAs
@@ -42,20 +62,10 @@ describe("adwiser", () => {
       program.programId
     );
     
-    [treasuryAcc] = await anchor.web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("treasury"), campaignId.toArrayLike(Buffer, "le", 8)],
+    [escrowAcc] = await anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("escrow"), campaignId.toArrayLike(Buffer, "le", 8)],
       program.programId
     );
-    
-    // Fund publisher accounts for rent exemption
-    // const airdropSignature1 = await provider.connection.requestAirdrop(
-    //   publisher1.publicKey,
-    //   0.1 * LAMPORTS_PER_SOL
-    // );
-    // const airdropSignature2 = await provider.connection.requestAirdrop(
-    //   publisher2.publicKey,
-    //   0.1 * LAMPORTS_PER_SOL
-    // );
   });
   
   describe("initializeCampaign", () => {
@@ -64,30 +74,32 @@ describe("adwiser", () => {
         .initializeCampaign(
           campaignId,
           campaignName,
-          adwiser.publicKey,
+          advertiser.publicKey,
           costPerClick,
           adDurationDays,
           publishers,
           lockedSol
         )
-        .accounts({
+        .accountsStrict({
           campaignAcc,
-          treasury: treasuryAcc, // Include treasury account
+          escrow: escrowAcc,
           adwiser: adwiser.publicKey,
           systemProgram: SystemProgram.programId,
         })
         .signers([adwiser])
-        .rpc();
+        .rpc()
+        .then(confirm)
+        .then(log); 
 
       const campaign = await program.account.campaign.fetch(campaignAcc);
 
       console.log("Campaign Account: ", campaignAcc.toBase58());
-      console.log("Treasury Account: ", treasuryAcc.toBase58());
+      console.log("escrow Account: ", escrowAcc.toBase58());
       console.log("Campaign ID: ", campaign.campaignId.toString());
       console.log("Campaign Name: ", campaign.campaignName);
       console.log(
         "AdWiser Public Key: ",
-        campaign.adwiserPubkey.toBase58()
+        adwiser.publicKey.toBase58()
       );
       console.log(
         "Cost Per Click: ",
@@ -108,14 +120,14 @@ describe("adwiser", () => {
       );
       console.log("Created At: ", campaign.createdAt.toString());
 
-      // Verify treasury balance
-      const treasuryBalance = await provider.connection.getBalance(treasuryAcc);
-      console.log("Treasury Balance: ", treasuryBalance / LAMPORTS_PER_SOL, "SOL");
+      // Verify escrow balance
+      const escrowBalance = await provider.connection.getBalance(escrowAcc);
+      console.log("escrow Balance: ", escrowBalance / LAMPORTS_PER_SOL, "SOL");
 
       expect(campaignId.eq(campaign.campaignId)).to.be.true;
       expect(campaign.campaignName).to.equal(campaignName);
-      expect(campaign.adwiserPubkey.toBase58()).to.equal(
-        adwiser.publicKey.toBase58()
+      expect(campaign.advertiserPubkey.toBase58()).to.equal(
+        advertiser.publicKey.toBase58()
       );
       expect(campaign.costPerClick.toNumber()).to.equal(
         costPerClick.toNumber()
@@ -128,6 +140,8 @@ describe("adwiser", () => {
       ).to.deep.equal(publishers.map((p) => p.toBase58()));
       expect(campaign.lockedSol.toNumber()).to.equal(lockedSol.toNumber());
       expect(campaign.remainingSol.toNumber()).to.equal(lockedSol.toNumber());
+      expect(campaign.totalClicks.toNumber()).to.equal(0);
+      expect(campaign.commissionClicks.toNumber()).to.equal(0);
       expect(typeof campaign.createdAt.toNumber()).to.equal("number");
     });
   });
@@ -135,26 +149,32 @@ describe("adwiser", () => {
   describe("Pay Publisher", () => {
     it("pays the publisher", async () => {
       const publisher = publisher1;
-      const amount = new anchor.BN(1 * LAMPORTS_PER_SOL);
       
+      console.log("no_of_clicks: ", no_of_clicks.toNumber());
       // Get publisher's balance before payment
       const balanceBefore = await provider.connection.getBalance(publisher.publicKey);
       console.log("Publisher balance before: ", balanceBefore / LAMPORTS_PER_SOL, "SOL");
       
-      // Get treasury balance before payment
-      const treasuryBalanceBefore = await provider.connection.getBalance(treasuryAcc);
-      console.log("Treasury balance before: ", treasuryBalanceBefore / LAMPORTS_PER_SOL, "SOL");
+      // Get escrow balance before payment
+      const escrowBalanceBefore = await provider.connection.getBalance(escrowAcc);
+      console.log("escrow balance before: ", escrowBalanceBefore / LAMPORTS_PER_SOL, "SOL");
+
+      const campaign1 = await program.account.campaign.fetch(campaignAcc);
+      console.log ("Amount to be paid: ", no_of_clicks.mul(campaign1.costPerClick).toNumber() / LAMPORTS_PER_SOL, "SOL");
+
 
       // Pay the publisher
       await program.methods
-        .payPublisher(campaignId, amount)
-        .accounts({
+        .payPublisher(campaignId, no_of_clicks)
+        .accountsStrict({
           campaignAcc,
-          treasury: treasuryAcc,
+          escrow: escrowAcc,
           publisher: publisher.publicKey,
           systemProgram: SystemProgram.programId,
         })
-        .rpc();
+        .rpc()
+        .then(confirm)
+        .then(log); 
       console.log("Payment transaction sent");
   
       // Get campaign data after payment
@@ -168,49 +188,104 @@ describe("adwiser", () => {
       const balanceAfter = await provider.connection.getBalance(publisher.publicKey);
       console.log("Publisher balance after: ", balanceAfter / LAMPORTS_PER_SOL, "SOL");
       
-      // Get treasury balance after payment
-      const treasuryBalanceAfter = await provider.connection.getBalance(treasuryAcc);
-      console.log("Treasury balance after: ", treasuryBalanceAfter / LAMPORTS_PER_SOL, "SOL");
+      // Get escrow balance after payment
+      const escrowBalanceAfter = await provider.connection.getBalance(escrowAcc);
+      console.log("escrow balance after: ", escrowBalanceAfter / LAMPORTS_PER_SOL, "SOL");
       
-      // Verify the remaining SOL in campaign data is updated
-      // expect(campaign.remainingSol.toNumber()).to.equal(
-      //   lockedSol.sub(amount).toNumber()
-      // );
+      //Verify the remaining SOL in campaign data is updated
+      const amount = no_of_clicks.mul(campaign.costPerClick);
+      expect(campaign.remainingSol.toNumber()).to.be.at.least(
+        lockedSol.sub(amount).toNumber() - 10000
+      );
       
       // Verify publisher received the payment (accounting for potential transaction fees)
       expect(balanceAfter).to.be.at.least(balanceBefore + amount.toNumber() - 10000);
       
-      // Verify treasury balance decreased by the payment amount
-      expect(treasuryBalanceAfter).to.be.at.most(treasuryBalanceBefore - amount.toNumber());
+      // Verify escrow balance decreased by the payment amount
+      expect(escrowBalanceAfter).to.be.at.most(escrowBalanceBefore - amount.toNumber());
+    });
+  });
+
+  describe("Pay Commission", () => {
+    it("pays the commission to adwiser wallet", async () => {
+      // Get publisher's balance before payment
+      const balanceBefore = await provider.connection.getBalance(adwiser.publicKey);
+      console.log("AdWiser balance before: ", balanceBefore / LAMPORTS_PER_SOL, "SOL");
+      
+      // Get escrow balance before payment
+      const escrowBalanceBefore = await provider.connection.getBalance(escrowAcc);
+      console.log("escrow balance before: ", escrowBalanceBefore / LAMPORTS_PER_SOL, "SOL");
+
+
+      // Pay the commssion
+      await program.methods
+        .payCommission(campaignId, percentage)
+        .accountsStrict({
+          campaignAcc,
+          escrow: escrowAcc,
+          adwiser: adwiser.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc()
+        .then(confirm)
+        .then(log); 
+      console.log("Payment transaction sent");
+  
+      // Get campaign data after payment
+      const campaign = await program.account.campaign.fetch(campaignAcc);
+      console.log(
+        "Remaining SOL after payment: ",
+        campaign.remainingSol.toNumber() / LAMPORTS_PER_SOL
+      );
+      
+      // Get adwiser's balance after payment
+      const balanceAfter = await provider.connection.getBalance(adwiser.publicKey);
+      console.log("AdWiser balance after: ", balanceAfter / LAMPORTS_PER_SOL, "SOL");
+      
+      // Get escrow balance after payment
+      const escrowBalanceAfter = await provider.connection.getBalance(escrowAcc);
+      console.log("escrow balance after: ", escrowBalanceAfter / LAMPORTS_PER_SOL, "SOL");
+      
+      //Verify the remaining SOL in campaign data is updated
+      let amount = no_of_clicks.mul(campaign.costPerClick).toNumber();
+      amount = amount * (percentage.toNumber() / 100);
+      expect(balanceAfter).equals(balanceBefore + amount + 5000);
+      
+      // Verify publisher received the payment (accounting for potential transaction fees)
+      expect(balanceAfter).to.be.at.least(balanceBefore + amount - 10000);
+      
+      // Verify escrow balance decreased by the payment amount
+      expect(escrowBalanceAfter).to.be.at.most(escrowBalanceBefore - amount);
     });
   });
 
   describe("Close Campaign", () => {
     it("close campaign", async () => {
-
-      const advertiser = Keypair.generate();
-    
       await program.methods
-        .closeCampaign().accounts({
+        .closeCampaign().accountsStrict({
           campaignAcc,
           adwiser: adwiser.publicKey,
           systemProgram: SystemProgram.programId,
         })
-        .rpc();
+        .rpc()
+        .then(confirm)
+        .then(log); 
       console.log("Campaign closed");
 
       await program.methods
-        .closeTreasury(campaignId).accounts({
-          treasury: treasuryAcc,
+        .closeEscrow(campaignId).accountsStrict({
+          escrow: escrowAcc,
           advertiser: advertiser.publicKey,
           systemProgram: SystemProgram.programId,
         })
-        .rpc();
-      console.log("Treasury closed");
+        .rpc()
+        .then(confirm)
+        .then(log); 
+      console.log("escrow closed");
   
       const accountInfo = await provider.connection.getAccountInfo(campaignAcc);
       expect(accountInfo).to.be.null;
-      const accountInfo2 = await provider.connection.getAccountInfo(treasuryAcc);
+      const accountInfo2 = await provider.connection.getAccountInfo(escrowAcc);
       expect(accountInfo2).to.be.null;
     });
   });
