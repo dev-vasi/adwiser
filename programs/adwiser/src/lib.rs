@@ -55,6 +55,17 @@ pub mod adwiser {
         Ok(())
     }
 
+    pub fn update_campaign(
+        ctx: Context<UpdateCampaign>,
+        campaign_id: u64,
+        ad_duration_days: u64,
+        locked_sol: u64
+    ) -> Result<()> {
+        ctx.accounts.campaign_acc.campaign_id = campaign_id;
+        update_campaign::UpdateCampaign::<'_>::update_campaign(ctx, ad_duration_days, locked_sol)?;
+        Ok(())
+    }
+
     pub fn close_campaign(ctx: Context<CloseCampaign>) -> Result<()> {
         CloseCampaign::close_campaign_fn(ctx)
     }

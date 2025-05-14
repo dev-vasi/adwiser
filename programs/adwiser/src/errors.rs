@@ -18,4 +18,6 @@ pub enum AdwiserError {
     NothingToWithdraw,
     #[msg("Commission clicks are zero")]
     NoClicksForCommission,
+    #[msg("Either Locked SOL or AD Duration should be greater than zero")]
+    InvalidUpdate,
 }

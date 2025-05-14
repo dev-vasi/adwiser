@@ -21,6 +21,7 @@ pub struct CloseCampaign<'info> {
 
 impl<'info> CloseCampaign<'info> {
     pub fn close_campaign_fn(_ctx: Context<CloseCampaign>) -> Result<()> {
+        msg!("Closed campaign account: {:?}", _ctx.accounts.campaign_acc.key());
         Ok(())
     }
 }
@@ -62,6 +63,7 @@ impl<'info> CloseEscrow<'info> {
         };
         let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
         system_program::transfer(cpi_ctx, ctx.accounts.escrow.lamports())?;
+        msg!("Closed escrow account: {:?}", ctx.accounts.escrow.key());
 
         Ok(())
     }

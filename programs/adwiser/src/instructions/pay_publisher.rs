@@ -31,7 +31,6 @@ pub struct PayPublisher<'info> {
 impl<'info> PayPublisher<'info> {
     pub fn pay_publisher_fn(ctx: Context<PayPublisher>, no_of_clicks: u64) -> Result<()> {
         let amount = ctx.accounts.campaign_acc.cost_per_click * no_of_clicks;
-        msg!("Amount to transfer: {:?}", amount);
         require!(amount > 0, AdwiserError::InvalidAmount);
         require!(ctx.accounts.campaign_acc.remaining_sol >= amount, AdwiserError::InsufficientFunds);
         require!(
@@ -53,15 +52,14 @@ impl<'info> PayPublisher<'info> {
         msg!("Escrow account: {:?}", ctx.accounts.escrow.key());
         msg!("Publisher account: {:?}", ctx.accounts.publisher.key());
         msg!("Amount to transfer: {:?}", amount);
-        msg!("Signer seeds: {:?}", signer_seeds);
         let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
         system_program::transfer(cpi_ctx, amount)?;
         ctx.accounts.campaign_acc.no_of_txns += 1;
         ctx.accounts.campaign_acc.total_clicks += no_of_clicks;
         ctx.accounts.campaign_acc.commission_clicks += no_of_clicks;
         ctx.accounts.campaign_acc.remaining_sol = ctx.accounts.escrow.lamports();
-        msg!("Remaining SOL in campaign account: {:?}", ctx.accounts.campaign_acc.remaining_sol);
-        msg!("Transfer successful");
+        msg!("Remaining SOL in escrow account: {:?}", ctx.accounts.campaign_acc.remaining_sol);
+        msg!("Pay Publisher Txn successful");
         Ok(())
     }
 }
