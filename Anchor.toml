@@ -12,7 +12,7 @@ adwiser = "HBUba6LqBPZSh2QNGwVDFxVq1vaj9Sav9vhVoAt1Ti6w"
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "localnet"
+cluster = "https://api.devnet.solana.com"
 wallet = "/Users/vasi/myGitHub/Turbin3/adwiser/Turbin3-wallet.json"
 
 [scripts]

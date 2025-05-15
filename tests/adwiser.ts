@@ -16,11 +16,10 @@ const { expect } = chai;
 const keypair = Keypair.fromSecretKey(new Uint8Array(wallet));
 
 describe("adwiser", () => {
-  // Configure the client to use the local cluster.
+
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
   const program = anchor.workspace.Adwiser as Program<Adwiser>;
-
   const connection = provider.connection;
 
   let adwiser: Keypair = keypair;
@@ -28,15 +27,15 @@ describe("adwiser", () => {
   let escrowAcc: PublicKey;
   const campaignId = new anchor.BN(Date.now());
   const campaignName = "Test Campaign";
-  const costPerClick = new anchor.BN(1000000000); // 1 SOL
-  const adDurationDays = new anchor.BN(7);
+  const costPerClick = new anchor.BN(0.05 * LAMPORTS_PER_SOL); // 1 SOL
+  const adDurationDays = new anchor.BN(7); // 7 days
   const percentage = new anchor.BN(5); //5% commission
   const no_of_clicks = new anchor.BN(10);
   const advertiser = Keypair.generate();
   const publisher1 = Keypair.generate();
   const publisher2 = Keypair.generate();
   const publishers = [publisher1.publicKey, publisher2.publicKey];
-  const lockedSol = new anchor.BN(100 * LAMPORTS_PER_SOL);
+  const lockedSol = new anchor.BN(2 * LAMPORTS_PER_SOL);
 
   const confirm = async (signature: string): Promise<string> => {
     const block = await connection.getLatestBlockhash();
@@ -67,7 +66,7 @@ describe("adwiser", () => {
     );
   });
 
-  describe("initializeCampaign", () => {
+  describe("InitializeCampaign", () => {
     it("Initialize a new campaign", async () => {
       await program.methods
         .initializeCampaign(
@@ -99,7 +98,7 @@ describe("adwiser", () => {
       console.log("AdWiser Public Key: ", adwiser.publicKey.toBase58());
       console.log(
         "Cost Per Click: ",
-        campaign.costPerClick.toNumber() / LAMPORTS_PER_SOL
+        campaign.costPerClick.toNumber() / LAMPORTS_PER_SOL, " SOL"
       );
       console.log("Ad Duration Days: ", campaign.adDurationDays.toNumber());
       console.log(
@@ -108,11 +107,11 @@ describe("adwiser", () => {
       );
       console.log(
         "Locked SOL: ",
-        campaign.lockedSol.toNumber() / LAMPORTS_PER_SOL
+        campaign.lockedSol.toNumber() / LAMPORTS_PER_SOL, " SOL"
       );
       console.log(
         "Remaining SOL: ",
-        campaign.remainingSol.toNumber() / LAMPORTS_PER_SOL
+        campaign.remainingSol.toNumber() / LAMPORTS_PER_SOL, " SOL"
       );
       console.log(
         "Created At:",
@@ -145,7 +144,7 @@ describe("adwiser", () => {
     });
   });
 
-  describe("initializeCampaign - Errors", () => {
+  describe("InitializeCampaign - Errors", () => {
     it("Fails to initialize campaign with zero locked SOL", async () => {
       const campaignId = new anchor.BN(Date.now() + 1);
       const [campaignAcc] = anchor.web3.PublicKey.findProgramAddressSync(
@@ -335,7 +334,7 @@ describe("adwiser", () => {
     });
   });
 
-  describe("payPublisher - Errors", () => {
+  describe("Pay Publisher - Errors", () => {
     it("Fails to pay publisher with 0 clicks", async () => {
       await expect(
         program.methods
@@ -450,7 +449,7 @@ describe("adwiser", () => {
     });
   });
 
-  describe("payCommission - Errors", () => {
+  describe("Pay Commission - Errors", () => {
     it("Fails to pay commission when commission clicks are zero", async () => {
       await expect(
         program.methods
@@ -474,6 +473,11 @@ describe("adwiser", () => {
       console.log(
         "Locked SOL before: ",
         campaignBefore.lockedSol.toNumber() / LAMPORTS_PER_SOL,
+        "SOL"
+      );
+      console.log(
+        "Remaining SOL before: ",
+        campaignBefore.remainingSol.toNumber() / LAMPORTS_PER_SOL,
         "SOL"
       );
       console.log(
@@ -503,6 +507,11 @@ describe("adwiser", () => {
         "SOL"
       );
       console.log(
+        "Updated Remaining SOL: ",
+        campaign.remainingSol.toNumber() / LAMPORTS_PER_SOL,
+        "SOL"
+      );
+      console.log(
         "Updated Ad Duration Days: ",
         campaign.adDurationDays.toNumber(),
         "days"
@@ -521,7 +530,7 @@ describe("adwiser", () => {
     });
   });
 
-  describe("updateCampaign - Errors", () => {
+  describe("Update Campaign - Errors", () => {
     it("Fails to update campaign with 0 SOL and 0 duration", async () => {
       await expect(
         program.methods
@@ -539,7 +548,7 @@ describe("adwiser", () => {
     });
   });
 
-  describe("closeEscrow - Errors", () => {
+  describe("Close - Errors", () => {
     it("Fails to close escrow with 0 balance", async () => {
       const emptyCampaignId = new anchor.BN(Date.now() + 4);
       const [emptyEscrow] = anchor.web3.PublicKey.findProgramAddressSync(
